@@ -1,0 +1,6 @@
+# Codex Guardian - Python Dependencies
+
+# HTTP requests for webhooks
+requests>=2.31.0
+
+# SQLite is built-in (no external dependency needed)
