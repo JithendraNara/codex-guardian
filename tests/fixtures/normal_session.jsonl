@@ -1,0 +1,11 @@
+{"timestamp": "2026-03-25T10:00:00Z", "event_type": "tool_call", "tool_name": "Read", "file_path": "src/main.py", "tokens": 1200}
+{"timestamp": "2026-03-25T10:00:05Z", "event_type": "tool_call", "tool_name": "Edit", "file_path": "src/main.py", "tokens": 1350}
+{"timestamp": "2026-03-25T10:00:10Z", "event_type": "tool_call", "tool_name": "Read", "file_path": "src/utils.py", "tokens": 1550}
+{"timestamp": "2026-03-25T10:00:15Z", "event_type": "tool_call", "tool_name": "Write", "file_path": "src/utils.py", "tokens": 1800}
+{"timestamp": "2026-03-25T10:00:20Z", "event_type": "tool_call", "tool_name": "Bash", "command": "python -m pytest tests/", "tokens": 2100}
+{"timestamp": "2026-03-25T10:00:25Z", "event_type": "status_change", "status": "Working...", "tokens": 2100}
+{"timestamp": "2026-03-25T10:00:30Z", "event_type": "tool_call", "tool_name": "Bash", "command": "python -m pytest tests/ --tb=short", "tokens": 2400}
+{"timestamp": "2026-03-25T10:00:35Z", "event_type": "tool_call", "tool_name": "Read", "file_path": "src/config.py", "tokens": 2600}
+{"timestamp": "2026-03-25T10:00:40Z", "event_type": "tool_call", "tool_name": "Edit", "file_path": "src/config.py", "tokens": 2850}
+{"timestamp": "2026-03-25T10:00:45Z", "event_type": "tool_call", "tool_name": "Bash", "command": "python -m pytest tests/ -v", "tokens": 3100}
+{"timestamp": "2026-03-25T10:00:50Z", "event_type": "status_change", "status": "idle", "tokens": 3100}

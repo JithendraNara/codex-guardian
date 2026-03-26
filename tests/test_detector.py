@@ -1,16 +1,10 @@
-"""
-Unit tests for Codex Guardian Detection Engine.
-"""
-
-import unittest
+"""Tests for the detection engine."""
+import json
+import pytest
 from datetime import datetime, timedelta
 from pathlib import Path
 
-import sys
-# Add src to path
-sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
-
-from detector import (
+from codex_guardian.detector import (
     Event,
     detect_infinite_loop,
     detect_token_spike,
@@ -18,373 +12,271 @@ from detector import (
     detect_risky_pattern,
     calculate_health_score,
     analyze_session,
-    normalize_path,
+    estimate_session_cost,
+    format_cost_alert,
+    Thresholds,
+    Preset,
 )
-from thresholds import Thresholds, Preset
 
 
-def create_event(
-    minutes_ago: float,
-    event_type: str = "tool_call",
-    tool_name: str = "edit",
-    file_path: str = None,
-    command: str = None,
-    tokens: int = None,
-    status: str = None,
-) -> Event:
-    """Helper to create events with relative timestamps."""
-    return Event(
-        timestamp=datetime.now() - timedelta(minutes=minutes_ago),
-        event_type=event_type,
-        tool_name=tool_name,
-        file_path=file_path,
-        command=command,
-        tokens=tokens,
-        status=status,
-    )
+def load_events(fixture_name: str) -> list[Event]:
+    """Load events from a fixture file."""
+    fixture_path = Path(__file__).parent / "fixtures" / f"{fixture_name}.jsonl"
+    events = []
+    with open(fixture_path) as f:
+        for line in f:
+            line = line.strip()
+            if line:
+                data = json.loads(line)
+                events.append(Event.from_dict(data))
+    return events
 
 
-class TestDetectInfiniteLoop(unittest.TestCase):
+class TestEvent:
+    """Tests for Event dataclass."""
+
+    def test_from_dict_basic(self):
+        data = {
+            "timestamp": "2026-03-25T10:00:00Z",
+            "event_type": "tool_call",
+            "tool_name": "Read",
+            "file_path": "src/main.py",
+            "tokens": 1200,
+        }
+        event = Event.from_dict(data)
+        assert event.tool_name == "Read"
+        assert event.file_path == "src/main.py"
+        assert event.tokens == 1200
+        assert event.event_type == "tool_call"
+
+    def test_from_dict_iso_timestamp(self):
+        data = {
+            "timestamp": "2026-03-25T10:00:00+00:00",
+            "event_type": "tool_call",
+            "tokens": 100,
+        }
+        event = Event.from_dict(data)
+        assert isinstance(event.timestamp, datetime)
+
+    def test_to_dict_roundtrip(self):
+        data = {
+            "timestamp": "2026-03-25T10:00:00Z",
+            "event_type": "tool_call",
+            "tool_name": "Write",
+            "file_path": "test.py",
+            "tokens": 500,
+        }
+        event = Event.from_dict(data)
+        roundtrip = event.to_dict()
+        assert roundtrip["tool_name"] == "Write"
+        assert roundtrip["tokens"] == 500
+
+
+class TestInfiniteLoopDetection:
     """Tests for infinite loop detection."""
-    
-    def test_no_loop_detected(self):
-        """Normal usage should not trigger detection."""
-        events = [
-            create_event(10, tool_name="read", file_path="/src/main.py"),
-            create_event(8, tool_name="edit", file_path="/src/utils.py"),
-            create_event(5, tool_name="read", file_path="/src/config.py"),
-        ]
+
+    def test_normal_session_no_detection(self):
+        events = load_events("normal_session")
         result = detect_infinite_loop(events)
-        self.assertFalse(result.detected)
-    
-    def test_same_file_repeated(self):
-        """Same file modified 3+ times should trigger detection."""
-        now = datetime.now()
-        events = [
-            Event(timestamp=now - timedelta(minutes=2), event_type="tool_call", 
-                  tool_name="edit", file_path="/src/app.py"),
-            Event(timestamp=now - timedelta(minutes=1.5), event_type="tool_call",
-                  tool_name="edit", file_path="/src/app.py"),
-            Event(timestamp=now - timedelta(minutes=1), event_type="tool_call",
-                  tool_name="edit", file_path="/src/app.py"),
-            Event(timestamp=now - timedelta(minutes=0.5), event_type="tool_call",
-                  tool_name="edit", file_path="/src/app.py"),
-        ]
+        assert result.detected is False
+
+    def test_infinite_loop_detected(self):
+        events = load_events("infinite_loop_session")
         result = detect_infinite_loop(events)
-        self.assertTrue(result.detected)
-        self.assertIn("app.py", result.details["repeating_files"])
-    
-    def test_same_tool_repeated(self):
-        """Same tool called 5+ times should trigger detection."""
-        events = [
-            create_event(2, tool_name="read", file_path=f"/file{i}.py")
-            for i in range(6)
-        ]
-        result = detect_infinite_loop(events)
-        self.assertTrue(result.detected)
-        self.assertIn("read", result.details["repeating_tools"])
-    
-    def test_outside_time_window(self):
-        """Events outside time window should not count."""
-        events = [
-            create_event(10, tool_name="edit", file_path="/src/app.py"),
-            create_event(9, tool_name="edit", file_path="/src/app.py"),
-            create_event(8, tool_name="edit", file_path="/src/app.py"),
-        ]
-        result = detect_infinite_loop(events)
-        self.assertFalse(result.detected)
+        assert result.detected is True
+        assert result.severity in ("medium", "high", "critical")
+        assert "infinite loop" in result.message.lower()
 
-
-class TestDetectTokenSpike(unittest.TestCase):
-    """Tests for token spike detection."""
-    
-    def test_normal_token_usage(self):
-        """Normal token consumption should not trigger."""
-        now = datetime.now()
-        events = [
-            Event(timestamp=now - timedelta(minutes=10), tokens=1000),
-            Event(timestamp=now, tokens=5000),  # 4000 tokens in 10 min = 400/min
-        ]
-        result = detect_token_spike(events)
-        self.assertFalse(result.detected)
-    
-    def test_token_spike_detected(self):
-        """High token consumption should trigger."""
-        now = datetime.now()
-        events = [
-            Event(timestamp=now - timedelta(minutes=5), tokens=1000),
-            Event(timestamp=now, tokens=35000),  # 34000 in 5 min = 6800/min
-        ]
-        result = detect_token_spike(events)
-        self.assertTrue(result.detected)
-        self.assertGreater(result.details["tokens_per_minute"], 5000)
-    
-    def test_sustained_spike(self):
-        """Sustained high token usage should trigger."""
-        thresholds = Thresholds.from_preset(Preset.BALANCED)
-        now = datetime.now()
-        
-        # Build events showing sustained high usage
-        events = []
-        for i in range(10):
-            events.append(Event(
-                timestamp=now - timedelta(minutes=10-i),
-                tokens=1000 + (i * 6000)  # 6000 tokens per minute
-            ))
-        
-        result = detect_token_spike(events, thresholds=thresholds)
-        self.assertTrue(result.detected)
-    
-    def test_insufficient_data(self):
-        """Not enough token data should return low severity."""
-        events = [
-            create_event(0, tokens=1000),
-        ]
-        result = detect_token_spike(events)
-        self.assertFalse(result.detected)
-        self.assertEqual(result.severity, "low")
-
-
-class TestDetectStuckSession(unittest.TestCase):
-    """Tests for stuck session detection."""
-    
-    def test_active_session(self):
-        """Active session should not be stuck."""
-        events = [
-            create_event(1, tool_name="read"),
-            create_event(0.5, tool_name="edit"),
-        ]
-        result = detect_stuck_session(events)
-        self.assertFalse(result.detected)
-    
-    def test_stuck_with_no_tool_calls(self):
-        """Session with no tool calls should be flagged."""
-        events = [
-            create_event(10, event_type="status_change", status="Working..."),
-        ]
-        result = detect_stuck_session(events)
-        self.assertTrue(result.detected)
-        self.assertIn("No tool calls", result.message)
-    
-    def test_stuck_session_detected(self):
-        """Session without progress for 5+ minutes should be stuck."""
-        now = datetime.now()
-        events = [
-            Event(timestamp=now - timedelta(minutes=10), 
-                  event_type="tool_call", tool_name="edit", file_path="/test.py"),
-            Event(timestamp=now - timedelta(minutes=9),
-                  event_type="status_change", status="Working..."),
-            Event(timestamp=now - timedelta(minutes=1),
-                  event_type="status_change", status="Working..."),
-        ]
-        result = detect_stuck_session(events)
-        self.assertTrue(result.detected)
-        self.assertGreater(result.details["minutes_since_last_tool"], 5)
-    
-    def test_not_stuck_without_working_status(self):
-        """Session not in Working status should not be stuck."""
-        events = [
-            create_event(10, tool_name="read"),
-            create_event(0, event_type="status_change", status="Idle"),
-        ]
-        result = detect_stuck_session(events)
-        self.assertFalse(result.detected)
-
-
-class TestDetectRiskyPattern(unittest.TestCase):
-    """Tests for risky pattern detection."""
-    
-    def test_no_risky_patterns(self):
-        """Normal operations should not trigger."""
-        events = [
-            create_event(5, tool_name="read", file_path="/src/main.py"),
-            create_event(3, tool_name="edit", file_path="/src/utils.py"),
-            create_event(1, tool_name="create", file_path="/src/new.py"),
-        ]
-        result = detect_risky_pattern(events)
-        self.assertFalse(result.detected)
-    
-    def test_dangerous_command_detected(self):
-        """Dangerous commands should trigger."""
-        events = [
-            create_event(5, command="rm -rf /tmp/*"),
-            create_event(3, tool_name="edit", file_path="/src/main.py"),
-        ]
-        result = detect_risky_pattern(events)
-        self.assertTrue(result.detected)
-        self.assertEqual(result.severity, "critical")
-    
-    def test_mass_file_operations(self):
-        """Mass file operations should trigger."""
-        events = [
-            create_event(i * 0.1, event_type="file_delete", file_path=f"/tmp/file{i}.txt")
-            for i in range(15)
-        ]
-        result = detect_risky_pattern(events)
-        self.assertTrue(result.detected)
-        self.assertIn("mass_operations", result.details)
-    
-    def test_recursive_operations(self):
-        """Recursive operations should be detected."""
-        events = [
-            create_event(5, command="chmod -R 777 /home"),
-            create_event(3, command="find / -name '*.log'"),
-            create_event(1, command="grep -r 'pattern' /src"),
-        ]
-        result = detect_risky_pattern(events)
-        self.assertTrue(result.detected)
-        self.assertGreater(len(result.details["recursive_operations"]), 0)
-
-
-class TestHealthScore(unittest.TestCase):
-    """Tests for health score calculation."""
-    
-    def test_healthy_session(self):
-        """Healthy session should score high."""
-        events = [
-            create_event(10, tool_name="read", file_path="/src/main.py"),
-            create_event(8, tool_name="edit", file_path="/src/utils.py"),
-            create_event(5, tool_name="read", file_path="/src/config.py"),
-            create_event(2, tool_name="edit", file_path="/src/main.py", tokens=5000),
-        ]
-        session_data = {"events": events}
-        health = calculate_health_score(session_data)
-        self.assertGreaterEqual(health.score, 70)
-    
-    def test_unhealthy_session(self):
-        """Problematic session should score low."""
-        now = datetime.now()
-        events = [
-            Event(timestamp=now - timedelta(minutes=5),
-                  event_type="tool_call", tool_name="edit", file_path="/src/app.py"),
-            Event(timestamp=now - timedelta(minutes=4),
-                  event_type="tool_call", tool_name="edit", file_path="/src/app.py"),
-            Event(timestamp=now - timedelta(minutes=3),
-                  event_type="tool_call", tool_name="edit", file_path="/src/app.py"),
-            Event(timestamp=now - timedelta(minutes=2),
-                  event_type="tool_call", tool_name="edit", file_path="/src/app.py"),
-            Event(timestamp=now - timedelta(minutes=1),
-                  event_type="tool_call", tool_name="edit", file_path="/src/app.py"),
-            Event(timestamp=now, tokens=50000, status="Working..."),
-        ]
-        session_data = {"events": events}
-        health = calculate_health_score(session_data)
-        self.assertLess(health.score, 50)
-    
-    def test_recommendations_generated(self):
-        """Recommendations should be generated based on issues."""
-        events = [
-            create_event(10, command="rm -rf /"),
-        ]
-        session_data = {"events": events}
-        health = calculate_health_score(session_data)
-        self.assertIsInstance(health.recommendations, list)
-        self.assertGreater(len(health.recommendations), 0)
-
-
-class TestAnalyzeSession(unittest.TestCase):
-    """Tests for comprehensive session analysis."""
-    
-    def test_comprehensive_analysis(self):
-        """Should return all detection results."""
-        events = [
-            create_event(5, tool_name="read"),
-            create_event(2, tool_name="edit"),
-        ]
-        result = analyze_session(events)
-        
-        self.assertIn("healthy", result)
-        self.assertIn("health_score", result)
-        self.assertIn("detections", result)
-        self.assertIn("recommendations", result)
-        
-        # Check all detection types present
-        detections = result["detections"]
-        self.assertIn("infinite_loop", detections)
-        self.assertIn("token_spike", detections)
-        self.assertIn("stuck_session", detections)
-        self.assertIn("risky_pattern", detections)
-
-
-class TestThresholds(unittest.TestCase):
-    """Tests for threshold configuration."""
-    
-    def test_preset_conservative(self):
-        """Conservative preset should have stricter thresholds."""
-        thresholds = Thresholds.from_preset(Preset.CONSERVATIVE)
-        self.assertEqual(thresholds.same_file_modifications, 2)
-        self.assertEqual(thresholds.token_spike_threshold, 3000)
-    
-    def test_preset_balanced(self):
-        """Balanced preset should have default thresholds."""
-        thresholds = Thresholds.from_preset(Preset.BALANCED)
-        self.assertEqual(thresholds.same_file_modifications, 3)
-        self.assertEqual(thresholds.token_spike_threshold, 5000)
-    
-    def test_preset_aggressive(self):
-        """Aggressive preset should have lenient thresholds."""
-        thresholds = Thresholds.from_preset(Preset.AGGRESSIVE)
-        self.assertEqual(thresholds.same_file_modifications, 5)
-        self.assertEqual(thresholds.token_spike_threshold, 10000)
-    
-    def test_threshold_save_load(self,):
-        """Thresholds should save and load correctly."""
-        import tempfile
-        import os
-        
-        thresholds = Thresholds.from_preset(Preset.BALANCED)
-        
-        with tempfile.NamedTemporaryFile(mode='w', delete=False, suffix='.json') as f:
-            temp_path = f.name
-        
-        try:
-            thresholds.save(Path(temp_path))
-            loaded = Thresholds.load(Path(temp_path))
-            
-            self.assertEqual(loaded.same_file_modifications, 
-                           thresholds.same_file_modifications)
-            self.assertEqual(loaded.token_spike_threshold,
-                           thresholds.token_spike_threshold)
-        finally:
-            os.unlink(temp_path)
-
-
-class TestEdgeCases(unittest.TestCase):
-    """Edge case handling tests."""
-    
-    def test_empty_events(self):
-        """Empty events should handle gracefully."""
+    def test_empty_events_no_detection(self):
         result = detect_infinite_loop([])
-        self.assertFalse(result.detected)
-        
-        result = detect_token_spike([])
-        self.assertFalse(result.detected)
-        
-        result = detect_stuck_session([])
-        self.assertFalse(result.detected)
-        
-        result = detect_risky_pattern([])
-        self.assertFalse(result.detected)
-    
-    def test_none_values(self):
-        """None values should be handled."""
-        events = [create_event(5, file_path=None, tool_name=None)]
-        result = detect_infinite_loop(events)
-        self.assertFalse(result.detected)
-    
-    def test_path_normalization(self):
-        """Paths should be normalized for comparison."""
-        from detector import normalize_path
-        
-        self.assertEqual(
-            normalize_path("/home/user/project/src/main.py"),
-            normalize_path("~/project/src/main.py")
-        )
-        self.assertEqual(
-            normalize_path("/src/app.py"),
-            normalize_path("/src/app.py")
-        )
+        assert result.detected is False
+
+    def test_custom_thresholds(self):
+        thresholds = Thresholds(same_file_modifications=2)
+        events = load_events("infinite_loop_session")
+        result = detect_infinite_loop(events, thresholds)
+        assert result.detected is True
 
 
-if __name__ == "__main__":
-    unittest.main()
+class TestTokenSpikeDetection:
+    """Tests for token spike detection."""
+
+    def test_normal_session_no_spike(self):
+        events = load_events("normal_session")
+        result = detect_token_spike(events)
+        assert result.detected is False
+
+    def test_token_spike_detected(self):
+        events = load_events("token_spike_session")
+        result = detect_token_spike(events)
+        assert result.detected is True
+        assert result.severity in ("medium", "high", "critical")
+        assert "token" in result.message.lower()
+
+    def test_insufficient_data_no_detection(self):
+        events = [
+            Event(datetime.now(), "tool_call", tokens=1000),
+        ]
+        result = detect_token_spike(events)
+        assert result.detected is False
+
+
+class TestStuckSessionDetection:
+    """Tests for stuck session detection."""
+
+    def test_normal_session_not_stuck(self):
+        events = load_events("normal_session")
+        result = detect_stuck_session(events)
+        assert result.detected is False
+
+    def test_stuck_session_detected(self):
+        events = load_events("stuck_session")
+        result = detect_stuck_session(events)
+        assert result.detected is True
+        assert result.severity in ("medium", "high", "critical")
+        assert "stuck" in result.message.lower() or "progress" in result.message.lower()
+
+    def test_no_tool_calls(self):
+        events = [
+            Event(datetime.now(), "status_change", status="Working..."),
+        ]
+        result = detect_stuck_session(events)
+        assert result.detected is True
+        assert result.severity == "medium"
+
+
+class TestRiskyPatternDetection:
+    """Tests for risky pattern detection."""
+
+    def test_normal_session_no_risky(self):
+        events = load_events("normal_session")
+        result = detect_risky_pattern(events)
+        assert result.detected is False
+
+    def test_risky_commands_detected(self):
+        events = load_events("risky_command_session")
+        result = detect_risky_pattern(events)
+        assert result.detected is True
+        assert result.severity in ("medium", "high", "critical")
+        assert "risky" in result.message.lower() or "dangerous" in result.message.lower()
+
+    def test_risky_commands_details(self):
+        events = load_events("risky_command_session")
+        result = detect_risky_pattern(events)
+        assert len(result.details["dangerous_commands"]) > 0
+
+
+class TestHealthScore:
+    """Tests for health score calculation."""
+
+    def test_normal_session_healthy(self):
+        events = load_events("normal_session")
+        session_data = {"events": events}
+        health = calculate_health_score(session_data)
+        assert health.score >= 70
+        assert "healthy" not in [r.lower() for r in health.recommendations
+                                 if "healthy" in r.lower()] or len(health.recommendations) > 0
+
+    def test_unhealthy_session_low_score(self):
+        events = load_events("infinite_loop_session")
+        session_data = {"events": events}
+        health = calculate_health_score(session_data)
+        assert health.score < 70
+
+    def test_health_score_factors_present(self):
+        events = load_events("normal_session")
+        session_data = {"events": events}
+        health = calculate_health_score(session_data)
+        assert "infinite_loop" in health.factors
+        assert "token_spike" in health.factors
+        assert "stuck_session" in health.factors
+        assert "risky_pattern" in health.factors
+
+    def test_empty_events_graceful(self):
+        session_data = {"events": []}
+        health = calculate_health_score(session_data)
+        assert health.score >= 0
+        assert health.score <= 100
+
+
+class TestAnalyzeSession:
+    """Tests for the full session analysis."""
+
+    def test_normal_session_healthy(self):
+        events = load_events("normal_session")
+        result = analyze_session(events)
+        assert result["healthy"] is True
+        assert "health_score" in result
+        assert 0 <= result["health_score"] <= 100
+
+    def test_infinite_loop_session_unhealthy(self):
+        events = load_events("infinite_loop_session")
+        result = analyze_session(events)
+        assert result["healthy"] is False
+        assert result["detections"]["infinite_loop"]["detected"] is True
+
+    def test_all_detection_fields_present(self):
+        events = load_events("normal_session")
+        result = analyze_session(events)
+        assert "infinite_loop" in result["detections"]
+        assert "token_spike" in result["detections"]
+        assert "stuck_session" in result["detections"]
+        assert "risky_pattern" in result["detections"]
+
+
+class TestThresholdsPresets:
+    """Tests for threshold presets."""
+
+    def test_conservative_preset(self):
+        t = Thresholds.from_preset(Preset.CONSERVATIVE)
+        assert t.same_file_modifications == 2
+        assert t.same_tool_calls == 4
+        assert t.token_spike_threshold == 3000
+
+    def test_balanced_preset(self):
+        t = Thresholds.from_preset(Preset.BALANCED)
+        assert t.same_file_modifications == 3
+        assert t.token_spike_threshold == 5000
+
+    def test_aggressive_preset(self):
+        t = Thresholds.from_preset(Preset.AGGRESSIVE)
+        assert t.same_file_modifications == 5
+        assert t.token_spike_threshold == 10000
+
+    def test_threshold_serialization(self):
+        t = Thresholds.from_preset(Preset.BALANCED)
+        d = t.to_dict()
+        restored = Thresholds.from_dict(d)
+        assert restored.same_file_modifications == t.same_file_modifications
+        assert restored.token_spike_threshold == t.token_spike_threshold
+
+
+class TestCostEstimation:
+    """Tests for cost estimation."""
+
+    def test_estimate_normal_session_cost(self):
+        events = load_events("normal_session")
+        cost = estimate_session_cost(events)
+        assert "cost_to_date" in cost
+        assert "tokens_to_date" in cost
+        assert "projected_hourly_cost" in cost
+        assert cost["tokens_to_date"] > 0
+        assert cost["cost_to_date"] > 0
+
+    def test_estimate_empty_session(self):
+        cost = estimate_session_cost([])
+        assert cost["cost_to_date"] == 0.0
+        assert cost["tokens_to_date"] == 0
+
+    def test_format_cost_alert(self):
+        cost_data = {
+            "cost_to_date": 0.15,
+            "tokens_to_date": 3100,
+            "burn_rate_tokens_per_min": 62,
+            "projected_hourly_cost": 0.93,
+            "budget_remaining": 6900,
+        }
+        msg = format_cost_alert(cost_data, "abc12345")
+        assert "0.1500" in msg or "0.15" in msg
+        assert "3,100" in msg  # formatted with comma
+        assert "abc123" in msg

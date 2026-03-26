@@ -1,0 +1,8 @@
+{"timestamp": "2026-03-25T10:00:00Z", "event_type": "tool_call", "tool_name": "Read", "file_path": "src/main.py", "tokens": 1200}
+{"timestamp": "2026-03-25T10:00:05Z", "event_type": "tool_call", "tool_name": "Bash", "command": "python run.py", "tokens": 1500}
+{"timestamp": "2026-03-25T10:00:10Z", "event_type": "status_change", "status": "Working...", "tokens": 1500}
+{"timestamp": "2026-03-25T10:05:00Z", "event_type": "status_change", "status": "Working...", "tokens": 1500}
+{"timestamp": "2026-03-25T10:10:00Z", "event_type": "status_change", "status": "Working...", "tokens": 1500}
+{"timestamp": "2026-03-25T10:15:00Z", "event_type": "status_change", "status": "Working...", "tokens": 1500}
+{"timestamp": "2026-03-25T10:20:00Z", "event_type": "status_change", "status": "Working...", "tokens": 1500}
+{"timestamp": "2026-03-25T10:25:00Z", "event_type": "status_change", "status": "Working...", "tokens": 1500}

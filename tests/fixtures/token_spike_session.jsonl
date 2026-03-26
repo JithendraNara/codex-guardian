@@ -1,0 +1,7 @@
+{"timestamp": "2026-03-25T10:00:00Z", "event_type": "tool_call", "tool_name": "Read", "file_path": "data/large_file.csv", "tokens": 1000}
+{"timestamp": "2026-03-25T10:00:01Z", "event_type": "tool_call", "tool_name": "Read", "file_path": "data/large_file.csv", "tokens": 5500}
+{"timestamp": "2026-03-25T10:00:02Z", "event_type": "tool_call", "tool_name": "Bash", "command": "python process.py", "tokens": 12000}
+{"timestamp": "2026-03-25T10:00:03Z", "event_type": "tool_call", "tool_name": "Read", "file_path": "data/output.json", "tokens": 18000}
+{"timestamp": "2026-03-25T10:00:04Z", "event_type": "tool_call", "tool_name": "Bash", "command": "python analyze.py", "tokens": 25000}
+{"timestamp": "2026-03-25T10:00:05Z", "event_type": "tool_call", "tool_name": "Read", "file_path": "data/results.csv", "tokens": 33000}
+{"timestamp": "2026-03-25T10:00:06Z", "event_type": "status_change", "status": "Working...", "tokens": 33000}

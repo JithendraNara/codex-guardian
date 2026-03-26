@@ -1,0 +1,7 @@
+{"timestamp": "2026-03-25T10:00:00Z", "event_type": "tool_call", "tool_name": "Bash", "command": "ls -la", "tokens": 500}
+{"timestamp": "2026-03-25T10:00:02Z", "event_type": "tool_call", "tool_name": "Bash", "command": "rm -rf node_modules/", "tokens": 800}
+{"timestamp": "2026-03-25T10:00:04Z", "event_type": "tool_call", "tool_name": "Bash", "command": "find / -name '*.log'", "tokens": 1200}
+{"timestamp": "2026-03-25T10:00:06Z", "event_type": "tool_call", "tool_name": "Bash", "command": "chmod -R 777 /tmp/", "tokens": 1600}
+{"timestamp": "2026-03-25T10:00:08Z", "event_type": "tool_call", "tool_name": "Bash", "command": "rm -f /var/log/*.log", "tokens": 2000}
+{"timestamp": "2026-03-25T10:00:10Z", "event_type": "tool_call", "tool_name": "Bash", "command": ":(){ :|:& };:", "tokens": 2400}
+{"timestamp": "2026-03-25T10:00:12Z", "event_type": "status_change", "status": "Working...", "tokens": 2400}

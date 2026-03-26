@@ -1,0 +1,11 @@
+{"timestamp": "2026-03-25T10:00:00Z", "event_type": "tool_call", "tool_name": "Read", "file_path": "src/main.py", "tokens": 1200}
+{"timestamp": "2026-03-25T10:00:03Z", "event_type": "tool_call", "tool_name": "Edit", "file_path": "src/main.py", "tokens": 1400}
+{"timestamp": "2026-03-25T10:00:06Z", "event_type": "tool_call", "tool_name": "Read", "file_path": "src/main.py", "tokens": 1600}
+{"timestamp": "2026-03-25T10:00:09Z", "event_type": "tool_call", "tool_name": "Edit", "file_path": "src/main.py", "tokens": 1800}
+{"timestamp": "2026-03-25T10:00:12Z", "event_type": "tool_call", "tool_name": "Read", "file_path": "src/main.py", "tokens": 2000}
+{"timestamp": "2026-03-25T10:00:15Z", "event_type": "tool_call", "tool_name": "Edit", "file_path": "src/main.py", "tokens": 2200}
+{"timestamp": "2026-03-25T10:00:18Z", "event_type": "tool_call", "tool_name": "Read", "file_path": "src/main.py", "tokens": 2400}
+{"timestamp": "2026-03-25T10:00:21Z", "event_type": "tool_call", "tool_name": "Edit", "file_path": "src/main.py", "tokens": 2600}
+{"timestamp": "2026-03-25T10:00:24Z", "event_type": "tool_call", "tool_name": "Read", "file_path": "src/main.py", "tokens": 2800}
+{"timestamp": "2026-03-25T10:00:27Z", "event_type": "tool_call", "tool_name": "Edit", "file_path": "src/main.py", "tokens": 3000}
+{"timestamp": "2026-03-25T10:00:30Z", "event_type": "status_change", "status": "Working...", "tokens": 3000}
