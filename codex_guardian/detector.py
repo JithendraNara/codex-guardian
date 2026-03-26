@@ -584,6 +584,107 @@ def calculate_health_score(
     )
 
 
+# --- Cost Calculation ---
+# Codex CLI uses OpenAI's pricing model
+# Input: $0.03/1K tokens | Output: $0.06/1K tokens
+CODEX_INPUT_COST_PER_1K = 0.03
+CODEX_OUTPUT_COST_PER_1K = 0.06
+
+# Rough assumption: 30% input, 70% output
+INPUT_OUTPUT_RATIO = 0.30
+
+
+def estimate_session_cost(
+    events: List[Event],
+    session_id: str = None
+) -> Dict[str, Any]:
+    """
+    Estimate cost of a Codex session based on token usage.
+
+    Returns:
+        cost_to_date: Estimated cost so far
+        tokens_to_date: Total tokens consumed
+        projected_session_cost: Cost if session continues at current rate
+        projected_hourly_cost: Estimated cost per hour
+        budget_remaining: How much of session budget remains
+        session_limit: Configured session token limit
+    """
+    # Get token events
+    token_events = [e for e in events if e.tokens is not None]
+
+    if len(token_events) < 2:
+        return {
+            "cost_to_date": 0.0,
+            "tokens_to_date": 0,
+            "projected_session_cost": 0.0,
+            "projected_hourly_cost": 0.0,
+            "budget_remaining": 10000,
+            "session_limit": 10000,
+            "burn_rate_tokens_per_min": 0,
+        }
+
+    sorted_events = sorted(token_events, key=lambda e: e.timestamp)
+    first_event = sorted_events[0]
+    last_event = sorted_events[-1]
+
+    tokens_to_date = last_event.tokens - first_event.tokens
+    duration_minutes = (last_event.timestamp - first_event.timestamp).total_seconds() / 60
+
+    # Calculate cost
+    input_tokens = int(tokens_to_date * INPUT_OUTPUT_RATIO)
+    output_tokens = int(tokens_to_date * (1 - INPUT_OUTPUT_RATIO))
+    cost_to_date = (input_tokens * CODEX_INPUT_COST_PER_1K / 1000) + \
+                   (output_tokens * CODEX_OUTPUT_COST_PER_1K / 1000)
+
+    # Project cost if session continues at current rate
+    if duration_minutes > 0.1:
+        burn_rate_per_min = tokens_to_date / duration_minutes
+        projected_hourly_cost = (burn_rate_per_min * 60 / 1000) * \
+            (input_tokens/tokens_to_date * CODEX_INPUT_COST_PER_1K +
+             (1 - input_tokens/tokens_to_date) * CODEX_OUTPUT_COST_PER_1K) \
+            if tokens_to_date > 0 else 0
+
+        # Assume 1-hour session remaining
+        session_duration_estimate = max(duration_minutes, 60)
+        total_projected_tokens = int(burn_rate_per_min * session_duration_estimate)
+        total_input = int(total_projected_tokens * INPUT_OUTPUT_RATIO)
+        total_output = total_projected_tokens - total_input
+        projected_session_cost = (total_input * CODEX_INPUT_COST_PER_1K / 1000) + \
+                                (total_output * CODEX_OUTPUT_COST_PER_1K / 1000)
+    else:
+        burn_rate_per_min = 0
+        projected_hourly_cost = 0
+        projected_session_cost = cost_to_date
+
+    # Budget tracking
+    session_limit = 10000  # default
+    budget_remaining = max(0, session_limit - tokens_to_date)
+
+    return {
+        "cost_to_date": round(cost_to_date, 4),
+        "tokens_to_date": tokens_to_date,
+        "projected_session_cost": round(projected_session_cost, 4),
+        "projected_hourly_cost": round(projected_hourly_cost, 2),
+        "budget_remaining": budget_remaining,
+        "session_limit": session_limit,
+        "burn_rate_tokens_per_min": int(burn_rate_per_min),
+        "duration_minutes": round(duration_minutes, 1),
+    }
+
+
+def format_cost_alert(cost_data: Dict[str, Any], session_id: str = None) -> str:
+    """Format cost data as a readable alert message."""
+    msg = f"💰 Cost Estimate"
+    if session_id:
+        msg += f" | Session: {session_id[:8]}"
+    msg += f"\n  Spent so far: ${cost_data['cost_to_date']:.4f}"
+    msg += f"\n  Tokens used: {cost_data['tokens_to_date']:,}"
+    msg += f"\n  Burn rate: {cost_data['burn_rate_tokens_per_min']} tokens/min"
+    msg += f"\n  Projected (1hr): ${cost_data['projected_hourly_cost']:.2f}/hr"
+    msg += f"\n  Budget remaining: {cost_data['budget_remaining']:,} tokens"
+    return msg
+
+
 # Convenience function for quick detection
 def analyze_session(
     events: List[Event],

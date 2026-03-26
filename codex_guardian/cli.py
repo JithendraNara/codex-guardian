@@ -59,8 +59,17 @@ def get_active_sessions():
 
 def cmd_monitor(args):
     """Start the real-time monitoring daemon."""
+    dry_run = args.dry_run or os.environ.get("CODEX_GUARDIAN_DRY_RUN") == "1"
+
+    if dry_run:
+        print("🔍 DRY-RUN MODE — No alerts will be sent")
+        print("   Override with: CODEX_GUARDIAN_DRY_RUN=0 codex-guardian monitor\n")
+
     print("Starting Codex Guardian monitoring daemon...")
-    print("Press Ctrl+C to stop")
+    if not dry_run:
+        print("Press Ctrl+C to stop")
+    else:
+        print("(Press Ctrl+C to exit)\n")
     
     config = load_config()
     monitoring_config = config.get("monitoring", {})
@@ -93,8 +102,9 @@ def cmd_monitor(args):
                             "threshold": health_threshold
                         }
                     }
-                    send_alert(alert_data, config)
                     print(f"[ALERT] Health critical: {session_id[:8]} - {health:.1f}")
+                    if not dry_run:
+                        send_alert(alert_data, config)
                 
                 # Check token burn rate (would need burn rate tracking)
                 # For now, check total tokens against session limit
@@ -117,8 +127,9 @@ def cmd_monitor(args):
                                 "percentage": warn_percent
                             }
                         }
-                        send_alert(alert_data, config)
                         print(f"[ALERT] Budget {warn_percent}%: {session_id[:8]} - {tokens_used}/{session_limit}")
+                        if not dry_run:
+                            send_alert(alert_data, config)
                         last_budget_warnings[key] = True
             
             # Check for runaway detection
@@ -137,8 +148,9 @@ def cmd_monitor(args):
                                 "tokens_used": tokens
                             }
                         }
-                        send_alert(alert_data, config)
                         print(f"[ALERT] Runaway detected: {session['session_id'][:8]} - {tokens} tokens")
+                        if not dry_run:
+                            send_alert(alert_data, config)
             
             time.sleep(check_interval)
     
@@ -439,6 +451,16 @@ def main():
     
     # Monitor command
     monitor_parser = subparsers.add_parser("monitor", help="Start real-time monitoring daemon")
+    monitor_parser.add_argument(
+        "--dry-run",
+        action="store_true",
+        help="Test mode: detect issues but do NOT send any alerts"
+    )
+    monitor_parser.add_argument(
+        "--once",
+        action="store_true",
+        help="Run one detection pass and exit (useful for testing)"
+    )
     
     # Status command
     status_parser = subparsers.add_parser("status", help="Show active sessions and health")

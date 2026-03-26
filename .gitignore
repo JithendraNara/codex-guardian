@@ -1,34 +1,22 @@
-# Python
+# Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[cod]
 *$py.class
-*.so
-.Python
+
+# Distribution / packaging
 build/
-develop-eggs/
 dist/
-downloads/
-eggs/
-.eggs/
-lib/
-lib64/
-parts/
-sdist/
-var/
-wheels/
 *.egg-info/
-.installed.cfg
 *.egg
 
 # Virtual environments
 venv/
-ENV/
 env/
-.venv
+.venv/
 
 # IDE
-.vscode/
 .idea/
+.vscode/
 *.swp
 *.swo
 *~
@@ -37,18 +25,25 @@ env/
 .pytest_cache/
 .coverage
 htmlcov/
+.tox/
+.nox/
 
-# Config (users should create their own)
-~/.codex-guardian/config.json
+# MyPy
+.mypy_cache/
 
-# Logs
-*.log
-
-# Database files (generated)
-*.db
-*.sqlite
-*.sqlite3
+# Local config (contains tokens/keys)
+.codex-guardian/config.json
+*.local.json
 
 # OS
 .DS_Store
 Thumbs.db
+
+# Secrets (never commit these)
+*.pem
+*.key
+.env
+.env.local
+
+# Logs
+*.log
